@@ -3,8 +3,11 @@ export interface BuyerProfile {
   budgetMin?: number;
   preferredBodyType?: string;
   preferredFuelType?: string;
+  preferredDrivetrain?: string;
   features?: string[];
+  seatingMin?: number;
   financeInterest?: boolean;
+  tradeInVehicle?: string;
   urgency?: "low" | "medium" | "high";
 }
 

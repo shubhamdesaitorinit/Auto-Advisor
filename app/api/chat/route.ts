@@ -1,10 +1,9 @@
-import { streamText, type UIMessage, convertToModelMessages } from "ai";
-import { getLLM } from "@/lib/llm";
+import { type UIMessage } from "ai";
 import { createRequestLogger } from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { runInputGuardrails } from "@/guardrails/input-sanitizer";
 import { getOrCreateSession, updateSession, trackSession } from "@/lib/session";
-import { getSystemPrompt } from "@/agents/orchestrator";
+import { orchestrate } from "@/agents/orchestrator";
 
 /** Extract plain text from a UIMessage's parts array. */
 function getTextFromParts(parts: UIMessage["parts"]): string {
@@ -37,7 +36,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Parse body — AI SDK v6 sends UIMessage[] with `parts` instead of `content`
+    // 2. Parse body
     const { messages } = (await request.json()) as { messages: UIMessage[] };
     const lastUserMessage = messages.filter((m) => m.role === "user").at(-1);
 
@@ -65,17 +64,10 @@ export async function POST(request: Request) {
     void trackSession(userId, sessionId);
     log.info({ leadScore: session.leadScore }, "Session loaded");
 
-    // 5. Convert UI messages to model messages for the LLM
-    const modelMessages = await convertToModelMessages(messages);
+    // 5. Orchestrate — detects intent and delegates to the right agent
+    const result = await orchestrate(messages);
 
-    // 6. Stream response via Vercel AI SDK
-    const result = streamText({
-      model: getLLM(),
-      system: getSystemPrompt(),
-      messages: modelMessages,
-    });
-
-    // 7. Fire-and-forget session update
+    // 6. Fire-and-forget session update
     void (async () => {
       try {
         const text = await result.text;
