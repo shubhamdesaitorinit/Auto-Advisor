@@ -81,7 +81,8 @@ export async function POST(request: Request) {
     let newVehicleIds: string[] = [];
     let newOffers = new Map<string, import("@/types").Offer>();
 
-    // 5. Orchestrate
+    // 5. Orchestrate — stream response to user (preserves tool call results for cards).
+    //    Validation runs in onFinish after the stream completes.
     const result = await orchestrate(messages, {
       sessionId,
       buyerProfile: session.buyerProfile,
@@ -95,71 +96,68 @@ export async function POST(request: Request) {
       onOffersGenerated: (offers) => {
         newOffers = offers;
       },
+      onFinish: async (text: string) => {
+        try {
+          // ── 6. Output validation (post-stream) ──────────────
+          const allOffers = { ...session.activeOffers };
+          for (const [vid, offer] of newOffers) {
+            allOffers[vid] = offer;
+          }
+
+          const validation = await runOutputValidation(text, {
+            activeOffers: allOffers,
+            log,
+          });
+
+          const finalText = validation.blocked
+            ? validation.correctedResponse
+            : validation.correctedResponse;
+
+          if (validation.blocked) {
+            log.warn(
+              { blockReason: validation.blockReason, processingTimeMs: validation.processingTimeMs },
+              "Output BLOCKED by validation — fallback stored",
+            );
+          }
+
+          // ── 7. Session update ───────────────────────────────
+          const sessionUpdate: Record<string, unknown> = {
+            messages: [
+              ...session.messages,
+              { role: "user", content: guardrail.cleanMessage, timestamp: Date.now() },
+              { role: "assistant", content: finalText, timestamp: Date.now() },
+            ],
+          };
+
+          if (newVehicleIds.length > 0) {
+            sessionUpdate.vehiclesViewed = [
+              ...new Set([...session.vehiclesViewed, ...newVehicleIds]),
+            ];
+          }
+
+          if (newOffers.size > 0) {
+            sessionUpdate.activeOffers = allOffers;
+          }
+
+          if (updatedProfile) {
+            sessionUpdate.buyerProfile = updatedProfile;
+            if (session.leadScore === "cold") {
+              sessionUpdate.leadScore = "warm";
+            }
+            if (updatedProfile.negotiationIntent || updatedProfile.budgetMax) {
+              sessionUpdate.leadScore = "hot";
+            }
+          }
+
+          await updateSession(sessionId, sessionUpdate);
+        } catch (err) {
+          log.error({ err }, "Failed to update session");
+        }
+      },
     });
 
-    // 6. Collect full response text, validate, then stream the validated version.
-    //    This ensures the user NEVER sees an invalid response.
-    const fullText = await result.text;
-
-    // 7. Output validation (runs BEFORE user sees the response)
-    const allOffers = { ...session.activeOffers };
-    for (const [vid, offer] of newOffers) {
-      allOffers[vid] = offer;
-    }
-
-    const validation = await runOutputValidation(fullText, {
-      activeOffers: allOffers,
-      log,
-    });
-
-    const finalText = validation.correctedResponse;
-
-    if (validation.blocked) {
-      log.warn(
-        { blockReason: validation.blockReason, processingTimeMs: validation.processingTimeMs },
-        "Output BLOCKED by validation",
-      );
-    }
-
-    // 8. Session update (fire-and-forget — don't block the response)
-    void (async () => {
-      try {
-        const sessionUpdate: Record<string, unknown> = {
-          messages: [
-            ...session.messages,
-            { role: "user", content: guardrail.cleanMessage, timestamp: Date.now() },
-            { role: "assistant", content: finalText, timestamp: Date.now() },
-          ],
-        };
-
-        if (newVehicleIds.length > 0) {
-          sessionUpdate.vehiclesViewed = [
-            ...new Set([...session.vehiclesViewed, ...newVehicleIds]),
-          ];
-        }
-
-        if (newOffers.size > 0) {
-          sessionUpdate.activeOffers = allOffers;
-        }
-
-        if (updatedProfile) {
-          sessionUpdate.buyerProfile = updatedProfile;
-          if (session.leadScore === "cold") {
-            sessionUpdate.leadScore = "warm";
-          }
-          if (updatedProfile.negotiationIntent || updatedProfile.budgetMax) {
-            sessionUpdate.leadScore = "hot";
-          }
-        }
-
-        await updateSession(sessionId, sessionUpdate);
-      } catch (err) {
-        log.error({ err }, "Failed to update session");
-      }
-    })();
-
-    // 9. Stream the validated text to the user
-    return streamTextMessage(finalText);
+    // 8. Stream the full response including tool call results (for vehicle cards)
+    return result.toUIMessageStreamResponse();
   } catch (err) {
     log.error({ err }, "Chat API error");
     return streamTextMessage(
