@@ -36,7 +36,7 @@ export const vehicles = pgTable("vehicles", {
   imageUrl: varchar("image_url", { length: 500 }),
   cargoSpaceL: integer("cargo_space_l"),
   winterReady: boolean("winter_ready").notNull().default(false),
-  descriptionEmbedding: vector("description_embedding", { dimensions: 1536 }),
+  descriptionEmbedding: vector("description_embedding", { dimensions: 3072 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

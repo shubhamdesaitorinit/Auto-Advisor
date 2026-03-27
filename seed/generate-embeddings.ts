@@ -2,7 +2,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
-import { eq, isNull } from "drizzle-orm";
+
 import * as schema from "../lib/schema";
 import { generateEmbedding } from "../lib/embeddings";
 
@@ -31,10 +31,9 @@ async function main() {
       const textForEmbedding = `${vehicle.make} ${vehicle.model} ${vehicle.variant}. ${vehicle.description}`;
       const embedding = await generateEmbedding(textForEmbedding);
 
-      await db
-        .update(schema.vehicles)
-        .set({ descriptionEmbedding: embedding })
-        .where(eq(schema.vehicles.id, vehicle.id));
+      // Use raw SQL because neon-http driver can't pass vector arrays via Drizzle's .set()
+      const vectorStr = `[${embedding.join(",")}]`;
+      await sql`UPDATE vehicles SET description_embedding = ${vectorStr}::vector WHERE id = ${vehicle.id}`;
 
       console.log(
         `  ✓ ${vehicle.make} ${vehicle.model} ${vehicle.variant} — ${embedding.length} dimensions`,

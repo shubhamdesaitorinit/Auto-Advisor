@@ -1,28 +1,21 @@
 import { embed } from "ai";
-import { getLLM } from "./llm";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 
 /**
  * Generate a vector embedding for the given text.
- * Uses OpenAI's text-embedding-3-small model (1536 dimensions).
- * Falls back to Anthropic-compatible embedding if available.
+ * Uses Google's gemini-embedding-001 model (768 dimensions).
+ * Free tier with generous limits from Google AI Studio.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const provider = process.env.LLM_PROVIDER ?? "anthropic";
-  const apiKey = process.env.LLM_API_KEY ?? "";
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not set");
+  }
 
-  // OpenAI embeddings are the standard — use them if an OpenAI key is available
-  const embeddingApiKey = process.env.OPENAI_API_KEY ?? apiKey;
-  const embeddingBaseUrl = process.env.EMBEDDING_BASE_URL;
-
-  const openai = createOpenAI({
-    apiKey: embeddingApiKey,
-    ...(embeddingBaseUrl ? { baseURL: embeddingBaseUrl } : {}),
-  });
+  const google = createGoogleGenerativeAI({ apiKey });
 
   const { embedding } = await embed({
-    model: openai.embedding("text-embedding-3-small"),
+    model: google.textEmbeddingModel("gemini-embedding-001"),
     value: text,
   });
 
