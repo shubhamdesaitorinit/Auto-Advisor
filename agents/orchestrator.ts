@@ -4,11 +4,31 @@ import { logger } from "@/lib/logger";
 import { ORCHESTRATOR_SYSTEM_PROMPT } from "@/prompts/orchestrator";
 import { runVehicleSearchAgent } from "./vehicle-search";
 import { runNegotiationAgent } from "./negotiation";
-import type { BuyerProfile } from "@/types";
+import { runBookingAgent } from "./booking";
+import { runLeadCaptureAgent } from "./lead-capture";
+import type { BuyerProfile, Session } from "@/types";
 import { DEFAULT_BUYER_PROFILE } from "@/types";
 import type { Logger } from "pino";
 
-// ── Negotiation intent patterns (checked FIRST — more specific) ─────
+// ── Booking intent patterns (checked FIRST — most specific) ─────
+const BOOKING_INTENT_PATTERNS = [
+  /\b(?:book|schedule|arrange)\s*(?:a\s*)?(?:test\s*drive|drive|appointment|visit)/i,
+  /\b(?:test\s*drive|take\s*(?:it|one)\s*for\s*a\s*(?:spin|drive))/i,
+  /\b(?:when\s*can\s*I\s*come\s*in|available\s*(?:times?|slots?|this))/i,
+  /\b(?:cancel|reschedule)\s*(?:my\s*)?(?:test\s*drive|appointment|booking)/i,
+  /\b(?:what\s*times?\s*(?:are|do)\s*you\s*have)/i,
+];
+
+// ── Lead capture intent patterns ────────────────────────────────
+const LEAD_CAPTURE_PATTERNS = [
+  /\b(?:email|send)\s*(?:me|it)\s*(?:the\s*)?(?:details|info|summary|specs)/i,
+  /\b(?:can\s*you\s*)?(?:email|send)\s*(?:me|that)\b/i,
+  /\b(?:follow\s*up|contact\s*me|call\s*me|reach\s*(?:me|out))/i,
+  /\bmy\s*email\s*is\b/i,
+  /[\w.-]+@[\w.-]+\.\w{2,}/i, // raw email in message
+];
+
+// ── Negotiation intent patterns ─────────────────────────────────
 const NEGOTIATION_INTENT_PATTERNS = [
   /\b(best price|best deal|best offer|what.s the price|how much|price on|cost of)\b/i,
   /\b(discount|deal|offer|negotiate|bargain|lower.the.price|reduce|knock off|come down)\b/i,
@@ -21,7 +41,7 @@ const NEGOTIATION_INTENT_PATTERNS = [
   /\b(ready to buy|want to buy|let.s do it|i.ll take|sign|close|wrap up)\b/i,
 ];
 
-// ── Vehicle search intent patterns ──────────────────────────────────
+// ── Vehicle search intent patterns ──────────────────────────────
 const VEHICLE_INTENT_PATTERNS = [
   /\b(suv|sedan|truck|hatchback|crossover|pickup|minivan|coupe|convertible)\b/i,
   /\b(show me|looking for|find|search|recommend|suggest|compare|which car|what car|best car|need a car|need a vehicle|buy|purchase)\b/i,
@@ -35,12 +55,20 @@ const VEHICLE_INTENT_PATTERNS = [
   /\b(details|specs|specifications|features|colors|safety|rating|warranty)\b/i,
 ];
 
-function isNegotiationIntent(message: string): boolean {
-  return NEGOTIATION_INTENT_PATTERNS.some((p) => p.test(message));
+function isBookingIntent(msg: string): boolean {
+  return BOOKING_INTENT_PATTERNS.some((p) => p.test(msg));
 }
 
-function isVehicleIntent(message: string): boolean {
-  return VEHICLE_INTENT_PATTERNS.some((p) => p.test(message));
+function isLeadCaptureIntent(msg: string): boolean {
+  return LEAD_CAPTURE_PATTERNS.some((p) => p.test(msg));
+}
+
+function isNegotiationIntent(msg: string): boolean {
+  return NEGOTIATION_INTENT_PATTERNS.some((p) => p.test(msg));
+}
+
+function isVehicleIntent(msg: string): boolean {
+  return VEHICLE_INTENT_PATTERNS.some((p) => p.test(msg));
 }
 
 function getLatestUserText(messages: UIMessage[]): string {
@@ -55,6 +83,7 @@ function getLatestUserText(messages: UIMessage[]): string {
 export interface OrchestrateOptions {
   onFinish?: (text: string) => Promise<void>;
   sessionId?: string;
+  session?: Session;
   buyerProfile?: BuyerProfile;
   onProfileUpdate?: (profile: BuyerProfile) => void;
   onVehiclesViewed?: (vehicleIds: string[]) => void;
@@ -62,6 +91,10 @@ export interface OrchestrateOptions {
   log?: Logger;
 }
 
+/**
+ * Orchestrate: detect intent and delegate to the right agent.
+ * Priority: booking → lead capture → negotiation → vehicle search → general
+ */
 export async function orchestrate(
   messages: UIMessage[],
   options?: OrchestrateOptions,
@@ -69,6 +102,7 @@ export async function orchestrate(
   const latestText = getLatestUserText(messages);
   const modelMessages = await convertToModelMessages(messages);
   const log = options?.log ?? logger;
+  const sessionId = options?.sessionId ?? "unknown";
 
   const onFinishCallback = options?.onFinish
     ? ({ text }: { text: string }) => {
@@ -76,15 +110,23 @@ export async function orchestrate(
       }
     : undefined;
 
-  // 1. Negotiation intent
+  // 1. Booking intent — test drive scheduling
+  if (isBookingIntent(latestText)) {
+    log.info({ agent: "booking", message: latestText.slice(0, 100) }, "Routing to booking agent");
+    return runBookingAgent(modelMessages, sessionId, log, onFinishCallback);
+  }
+
+  // 2. Lead capture intent — "email me details", contact info shared
+  if (isLeadCaptureIntent(latestText) && options?.session) {
+    log.info({ agent: "lead-capture", message: latestText.slice(0, 100) }, "Routing to lead capture agent");
+    return runLeadCaptureAgent(modelMessages, options.session, log, onFinishCallback);
+  }
+
+  // 3. Negotiation intent
   if (isNegotiationIntent(latestText)) {
-    log.info(
-      { agent: "negotiation", message: latestText.slice(0, 100) },
-      "Routing to negotiation agent",
-    );
+    log.info({ agent: "negotiation", message: latestText.slice(0, 100) }, "Routing to negotiation agent");
 
     const profile = options?.buyerProfile ?? DEFAULT_BUYER_PROFILE;
-    const sessionId = options?.sessionId ?? "unknown";
 
     const { stream, getUpdatedProfile, getViewedVehicleIds, getGeneratedOffers } = runNegotiationAgent(
       modelMessages,
@@ -103,14 +145,10 @@ export async function orchestrate(
     return stream;
   }
 
-  // 2. Vehicle search intent
+  // 4. Vehicle search intent
   if (isVehicleIntent(latestText)) {
-    log.info(
-      { agent: "vehicle-search", message: latestText.slice(0, 100) },
-      "Routing to vehicle search agent",
-    );
+    log.info({ agent: "vehicle-search", message: latestText.slice(0, 100) }, "Routing to vehicle search agent");
 
-    // Build buyer context string from profile if available
     const profile = options?.buyerProfile;
     let buyerContext: string | undefined;
     if (profile && (profile.budgetMax || profile.preferredBodyType || profile.financeInterest)) {
@@ -127,11 +165,8 @@ export async function orchestrate(
     return runVehicleSearchAgent(modelMessages, onFinishCallback, buyerContext);
   }
 
-  // 3. General assistant
-  log.info(
-    { agent: "general", message: latestText.slice(0, 100) },
-    "Routing to general assistant",
-  );
+  // 5. General assistant
+  log.info({ agent: "general", message: latestText.slice(0, 100) }, "Routing to general assistant");
   return streamText({
     model: getLLM(),
     system: ORCHESTRATOR_SYSTEM_PROMPT,

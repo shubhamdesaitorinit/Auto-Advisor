@@ -85,6 +85,7 @@ export async function POST(request: Request) {
     //    Validation runs in onFinish after the stream completes.
     const result = await orchestrate(messages, {
       sessionId,
+      session,
       buyerProfile: session.buyerProfile,
       log,
       onProfileUpdate: (profile) => {
