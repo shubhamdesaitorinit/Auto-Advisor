@@ -9,7 +9,7 @@ import { solveConstraints } from "@/engine/constraint-solver";
 import { generateOffer } from "@/engine/offer-generator";
 import { checkApproval } from "@/engine/approval-gate";
 import { generateFinancingOptions } from "@/engine/financing";
-import type { BuyerProfile, BuyerSignal } from "@/types";
+import type { BuyerProfile, BuyerSignal, Offer } from "@/types";
 import type { Logger } from "pino";
 
 /**
@@ -17,11 +17,15 @@ import type { Logger } from "pino";
  * in closure so the tools can update state.
  */
 function createNegotiationTools(sessionId: string, buyerProfile: BuyerProfile, log: Logger) {
-  // Mutable reference so tools can update across calls within one request
+  // Mutable references so tools can update state across calls within one request
   let currentProfile = { ...buyerProfile };
+  const viewedVehicleIds = new Set<string>();
+  const generatedOffers = new Map<string, Offer>();
 
   return {
     currentProfile: () => currentProfile,
+    viewedVehicleIds: () => [...viewedVehicleIds],
+    generatedOffers: () => generatedOffers,
 
     tools: {
       extract_budget_signals: tool({
@@ -83,6 +87,7 @@ function createNegotiationTools(sessionId: string, buyerProfile: BuyerProfile, l
             return { error: "Vehicle not found" };
           }
 
+          viewedVehicleIds.add(params.vehicle_id);
           log.info({ tool: "get_pricing_data", msrp: pricingData.msrp, inventoryAgeDays: pricingData.inventoryAgeDays }, "Pricing data loaded");
           return {
             vehicleId: pricingData.vehicleId,
@@ -108,7 +113,8 @@ function createNegotiationTools(sessionId: string, buyerProfile: BuyerProfile, l
           vehicle_id: z.string().describe("The UUID of the vehicle to make an offer on"),
         }),
         execute: async (params) => {
-          log.info({ tool: "generate_offer", vehicleId: params.vehicle_id, budgetMax: currentProfile.budgetMax }, "Generating offer");
+          const isCounter = generatedOffers.has(params.vehicle_id);
+          log.info({ tool: "generate_offer", vehicleId: params.vehicle_id, budgetMax: currentProfile.budgetMax, isCounterOffer: isCounter }, "Generating offer");
           const pricingData = await getFullPricing(params.vehicle_id);
           if (!pricingData) {
             log.warn({ tool: "generate_offer", vehicleId: params.vehicle_id }, "Vehicle not found");
@@ -116,7 +122,9 @@ function createNegotiationTools(sessionId: string, buyerProfile: BuyerProfile, l
           }
 
           const constraints = solveConstraints(pricingData, currentProfile);
-          const offer = generateOffer(constraints, pricingData, currentProfile);
+          // Pass previous offer for this vehicle if one exists (counter-offer flow)
+          const previousOffer = generatedOffers.get(params.vehicle_id);
+          const offer = generateOffer(constraints, pricingData, currentProfile, previousOffer);
           const approval = checkApproval(offer);
 
           log.info({
@@ -135,6 +143,10 @@ function createNegotiationTools(sessionId: string, buyerProfile: BuyerProfile, l
           // Save to DB for audit trail
           const offerId = await saveOffer(offer, sessionId);
           offer.id = offerId;
+
+          // Track for session update
+          viewedVehicleIds.add(params.vehicle_id);
+          generatedOffers.set(params.vehicle_id, offer);
 
           // Return offer details the agent can present to the user
           // Note: marginRetainedPct is NOT included — internal only
@@ -232,7 +244,7 @@ export function runNegotiationAgent(
   log: Logger,
   onFinish?: (event: { text: string }) => void,
 ) {
-  const { tools, currentProfile } = createNegotiationTools(
+  const { tools, currentProfile, viewedVehicleIds, generatedOffers } = createNegotiationTools(
     sessionId,
     buyerProfile,
     log,
@@ -246,12 +258,13 @@ export function runNegotiationAgent(
       tools,
       stopWhen: stepCountIs(5),
       onFinish: (event) => {
-        // Attach the updated profile to the event so the caller can persist it
         (event as unknown as Record<string, unknown>).__updatedProfile =
           currentProfile();
         onFinish?.(event);
       },
     }),
     getUpdatedProfile: currentProfile,
+    getViewedVehicleIds: viewedVehicleIds,
+    getGeneratedOffers: generatedOffers,
   };
 }

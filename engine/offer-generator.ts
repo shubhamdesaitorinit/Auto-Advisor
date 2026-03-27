@@ -12,11 +12,15 @@ import type {
  * Strategy: Always apply a real price reduction to close the budget gap,
  * THEN sweeten with high-efficiency extras (warranty, accessories, winter tires).
  * Extras add perceived value but the buyer needs to see the sticker price move.
+ *
+ * If a `previousOffer` is provided, this is a counter-offer — the engine
+ * will be more aggressive (deeper cut) but never go below margin floor.
  */
 export function generateOffer(
   constraints: ConstraintResult,
   pricing: VehiclePricing,
   buyerProfile: BuyerProfile,
+  previousOffer?: Offer,
 ): Offer {
   const extras: OfferExtra[] = [];
   let totalDealerCost = 0;
@@ -25,6 +29,13 @@ export function generateOffer(
 
   const hasGap = constraints.budgetGap > 0;
   const wantsDeal = buyerProfile.dealSeeking || buyerProfile.negotiationIntent || buyerProfile.priceResistance;
+  const isCounterOffer = !!previousOffer;
+
+  // Counter-offer escalation: if buyer rejected the previous offer,
+  // increase the cut by 40-60% of the gap between previous offer and their budget
+  const counterOfferBoost = isCounterOffer && buyerProfile.budgetMax
+    ? Math.max(0, previousOffer.offeredPrice - buyerProfile.budgetMax) * 0.5
+    : 0;
 
   // ── Step 1: Manufacturer cashback (free money from OEM) ────────
   if (pricing.cashbackOffer && pricing.cashbackOffer > 0) {
@@ -38,26 +49,29 @@ export function generateOffer(
   }
 
   // ── Step 2: Direct price cut to close the budget gap ───────────
-  // This is the real price movement the buyer sees on the sticker.
-  // We apply this BEFORE extras so the price actually comes down.
   if (hasGap) {
-    const gapAfterCashback = Math.max(0, constraints.budgetGap - priceReduction);
-    if (gapAfterCashback > 0) {
+    let targetCut = Math.max(0, constraints.budgetGap - priceReduction);
+    // On counter-offer, be more aggressive
+    if (isCounterOffer) {
+      targetCut = Math.max(targetCut, counterOfferBoost);
+    }
+    if (targetCut > 0) {
       const maxCut = Math.max(0, constraints.maxDiscount - priceReduction);
-      const priceCut = Math.min(gapAfterCashback, maxCut);
+      const priceCut = Math.min(targetCut, maxCut);
       priceReduction += priceCut;
     }
-  } else if (wantsDeal) {
-    // No specific budget gap, but buyer wants a deal — give a modest cut
-    const modestCutPct = constraints.inventoryPressure === "high" ? 0.03
+  } else if (wantsDeal || isCounterOffer) {
+    // No specific budget gap, but buyer wants a deal or is countering
+    const basePct = constraints.inventoryPressure === "high" ? 0.03
       : constraints.inventoryPressure === "medium" ? 0.02 : 0.01;
+    // Counter-offers get 50% more aggressive
+    const cutPct = isCounterOffer ? basePct * 1.5 : basePct;
     const modestCut = Math.min(
-      Math.round(pricing.msrp * modestCutPct),
+      Math.round(pricing.msrp * cutPct),
       constraints.maxDiscount - priceReduction,
     );
     if (modestCut > 0) priceReduction += modestCut;
   } else if (constraints.inventoryPressure !== "low") {
-    // No gap, not deal-seeking, but old inventory — goodwill discount
     const goodwillPct = constraints.inventoryPressure === "high" ? 0.025 : 0.01;
     const goodwill = Math.min(
       Math.round(pricing.msrp * goodwillPct),
@@ -103,6 +117,20 @@ export function generateOffer(
     });
     totalPerceivedValue += winterTireValue;
     totalDealerCost += winterTireCost;
+  }
+
+  // Free first service — only on counter-offers as an extra sweetener
+  if (isCounterOffer && !previousOffer.extras.some((e) => e.type === "free_service")) {
+    const serviceCost = 200;
+    const serviceValue = 500;
+    extras.push({
+      type: "free_service",
+      dealerCost: serviceCost,
+      perceivedValue: serviceValue,
+      description: `Complimentary first maintenance service (valued at $${serviceValue.toLocaleString("en-CA")})`,
+    });
+    totalPerceivedValue += serviceValue;
+    totalDealerCost += serviceCost;
   }
 
   // ── Step 4: Promotional financing ──────────────────────────────
@@ -160,6 +188,7 @@ export function generateOffer(
     approvalStatus,
     validForHours: 48,
     justification: generateJustification(constraints, buyerProfile),
+    createdAt: Date.now(),
   };
 }
 

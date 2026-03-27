@@ -115,10 +115,15 @@ const vehicleSearchTools = {
 export function runVehicleSearchAgent(
   messages: ModelMessage[],
   onFinish?: (event: { text: string }) => void,
+  buyerContext?: string,
 ) {
+  const system = buyerContext
+    ? `${VEHICLE_SEARCH_SYSTEM_PROMPT}\n\n## Known buyer context\n${buyerContext}`
+    : VEHICLE_SEARCH_SYSTEM_PROMPT;
+
   return streamText({
     model: getLLM(),
-    system: VEHICLE_SEARCH_SYSTEM_PROMPT,
+    system,
     messages,
     tools: vehicleSearchTools,
     stopWhen: stepCountIs(5),

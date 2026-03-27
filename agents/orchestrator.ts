@@ -57,6 +57,8 @@ export interface OrchestrateOptions {
   sessionId?: string;
   buyerProfile?: BuyerProfile;
   onProfileUpdate?: (profile: BuyerProfile) => void;
+  onVehiclesViewed?: (vehicleIds: string[]) => void;
+  onOffersGenerated?: (offers: Map<string, import("@/types").Offer>) => void;
   log?: Logger;
 }
 
@@ -84,13 +86,17 @@ export async function orchestrate(
     const profile = options?.buyerProfile ?? DEFAULT_BUYER_PROFILE;
     const sessionId = options?.sessionId ?? "unknown";
 
-    const { stream, getUpdatedProfile } = runNegotiationAgent(
+    const { stream, getUpdatedProfile, getViewedVehicleIds, getGeneratedOffers } = runNegotiationAgent(
       modelMessages,
       sessionId,
       profile,
       log,
       (event) => {
         options?.onProfileUpdate?.(getUpdatedProfile());
+        const viewed = getViewedVehicleIds();
+        if (viewed.length > 0) options?.onVehiclesViewed?.(viewed);
+        const offers = getGeneratedOffers();
+        if (offers.size > 0) options?.onOffersGenerated?.(offers);
         onFinishCallback?.(event);
       },
     );
@@ -103,7 +109,22 @@ export async function orchestrate(
       { agent: "vehicle-search", message: latestText.slice(0, 100) },
       "Routing to vehicle search agent",
     );
-    return runVehicleSearchAgent(modelMessages, onFinishCallback);
+
+    // Build buyer context string from profile if available
+    const profile = options?.buyerProfile;
+    let buyerContext: string | undefined;
+    if (profile && (profile.budgetMax || profile.preferredBodyType || profile.financeInterest)) {
+      const parts: string[] = [];
+      if (profile.budgetMax) parts.push(`Budget: up to $${profile.budgetMax.toLocaleString("en-CA")}`);
+      if (profile.budgetMin) parts.push(`Min budget: $${profile.budgetMin.toLocaleString("en-CA")}`);
+      if (profile.preferredBodyType) parts.push(`Preferred body type: ${profile.preferredBodyType}`);
+      if (profile.preferredFuelType) parts.push(`Preferred fuel: ${profile.preferredFuelType}`);
+      if (profile.financeInterest) parts.push("Interested in financing");
+      if (profile.urgency !== "medium") parts.push(`Purchase urgency: ${profile.urgency}`);
+      buyerContext = parts.join("\n");
+    }
+
+    return runVehicleSearchAgent(modelMessages, onFinishCallback, buyerContext);
   }
 
   // 3. General assistant
