@@ -48,8 +48,20 @@ function renderMarkdown(text: string) {
   });
 }
 
-function formatInline(text: string): string {
+/** Escape HTML entities to prevent XSS via dangerouslySetInnerHTML. */
+function escapeHtml(text: string): string {
   return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatInline(text: string): string {
+  // Escape HTML FIRST, then apply safe markdown formatting
+  const escaped = escapeHtml(text);
+  return escaped
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/`(.+?)`/g, '<code class="text-xs bg-muted/80 px-1 py-0.5 rounded">$1</code>');
