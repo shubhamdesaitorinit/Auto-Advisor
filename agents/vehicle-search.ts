@@ -112,12 +112,16 @@ const vehicleSearchTools = {
  * Run the vehicle search agent.
  * Returns a streaming result that can be converted to a response.
  */
-export function runVehicleSearchAgent(messages: ModelMessage[]) {
+export function runVehicleSearchAgent(
+  messages: ModelMessage[],
+  onFinish?: (event: { text: string }) => void,
+) {
   return streamText({
     model: getLLM(),
     system: VEHICLE_SEARCH_SYSTEM_PROMPT,
     messages,
     tools: vehicleSearchTools,
     stopWhen: stepCountIs(5),
+    onFinish,
   });
 }

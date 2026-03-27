@@ -71,7 +71,9 @@ export function HistorySidebar({
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
-    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return d.toLocaleDateString("en-CA", { day: "numeric", month: "short" });
   }
 
   return (
@@ -79,11 +81,10 @@ export function HistorySidebar({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center justify-center rounded-md h-8 w-8 hover:bg-accent hover:text-accent-foreground transition-colors"
+        className="inline-flex items-center justify-center rounded-lg h-8 w-8 hover:bg-accent transition-colors"
         title="Chat history"
       >
         <svg
-          xmlns="http://www.w3.org/2000/svg"
           width="18"
           height="18"
           viewBox="0 0 24 24"
@@ -93,52 +94,74 @@ export function HistorySidebar({
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          <path d="M12 8v4l3 3" />
-          <circle cx="12" cy="12" r="10" />
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
         </svg>
       </button>
       <Sheet open={open} onOpenChange={setOpen}>
-      <SheetContent side="left" className="w-80 p-0">
-        <SheetHeader className="px-4 py-3 border-b">
-          <SheetTitle className="text-sm">Chat History</SheetTitle>
-        </SheetHeader>
-        <div className="px-4 py-2">
-          <Button
-            variant="outline"
-            className="w-full text-sm"
-            onClick={handleNewChat}
-          >
-            + New Chat
-          </Button>
-        </div>
-        <ScrollArea className="flex-1 h-[calc(100vh-120px)]">
-          <div className="px-2 py-1">
-            {sessions.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-8">
-                No conversations yet
-              </p>
-            )}
-            {sessions.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => handleSelect(s.id)}
-                className={`w-full text-left rounded-lg px-3 py-2.5 mb-1 transition-colors hover:bg-muted ${
-                  s.id === currentSessionId
-                    ? "bg-muted border border-border"
-                    : ""
-                }`}
-              >
-                <p className="text-sm font-medium truncate">
-                  {s.preview}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {s.messageCount} messages · {formatTime(s.lastActiveAt)}
-                </p>
-              </button>
-            ))}
+        <SheetContent side="left" className="w-80 p-0 flex flex-col">
+          <SheetHeader className="px-4 py-4 border-b border-border/50">
+            <SheetTitle className="text-base font-semibold">Conversations</SheetTitle>
+          </SheetHeader>
+          <div className="px-3 py-3">
+            <Button
+              variant="outline"
+              className="w-full text-sm h-9 rounded-lg border-dashed"
+              onClick={handleNewChat}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              New Conversation
+            </Button>
           </div>
-        </ScrollArea>
-      </SheetContent>
+          <ScrollArea className="flex-1">
+            <div className="px-2 pb-4">
+              {sessions.length === 0 && (
+                <div className="text-center py-12 px-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted mx-auto mb-3">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-muted-foreground">No conversations yet</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">
+                    Start chatting to see your history here
+                  </p>
+                </div>
+              )}
+              {sessions.map((s) => {
+                const isActive = s.id === currentSessionId;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => handleSelect(s.id)}
+                    className={`w-full text-left rounded-lg px-3 py-2.5 mb-0.5 transition-all duration-150 ${
+                      isActive
+                        ? "bg-primary/10 border border-primary/20"
+                        : "hover:bg-muted border border-transparent"
+                    }`}
+                  >
+                    <p className={`text-sm font-medium truncate ${isActive ? "text-primary" : ""}`}>
+                      {s.preview}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-xs text-muted-foreground">
+                        {s.messageCount} msgs
+                      </span>
+                      <span className="text-xs text-muted-foreground/40">\u00B7</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatTime(s.lastActiveAt)}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </SheetContent>
       </Sheet>
     </>
   );

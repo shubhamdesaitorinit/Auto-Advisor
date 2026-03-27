@@ -18,16 +18,33 @@ const VEHICLE_KEYWORDS = [
   "transmission", "automatic", "manual", "diesel", "petrol", "cng",
   "hybrid", "sunroof", "airbag", "abs", "cruise control", "infotainment",
   "boot space", "ground clearance", "wheelbase", "alloy", "tyre", "tire",
+  "heated seats", "heated steering", "remote start", "block heater",
+  "apple carplay", "android auto", "safety", "rating", "cargo",
+  "fuel economy", "fuel efficient", "l/100km", "kwh", "range",
+  // Drivetrain
+  "awd", "4wd", "fwd", "4x4", "all-wheel", "four-wheel", "drivetrain",
+  // Winter / Canadian
+  "winter", "snow", "ice", "cold", "canadian", "canada", "winter ready",
+  "all-weather", "all-season", "izev", "rebate", "freight", "pdi",
   // Purchase & finance
   "price", "pricing", "budget", "cost", "emi", "loan", "finance",
   "insurance", "on-road", "ex-showroom", "showroom", "dealer",
   "discount", "offer", "deal", "exchange", "trade-in", "resale",
   "down payment", "interest rate", "tenure", "lakh", "lakhs",
+  "cad", "dollar", "msrp", "affordable", "cheap", "expensive",
+  "cashback", "financing rate", "promotion",
   // Actions
   "test drive", "booking", "book", "compare", "comparison", "review",
   "features", "specs", "specification", "variant", "model", "color",
   "colour", "delivery", "waiting period", "availability",
-  // Indian-specific
+  "recommend", "suggest", "show me", "looking for", "find", "search",
+  "need a", "best", "top", "which",
+  // Canadian brands/models not in original list
+  "subaru", "mazda", "chevrolet", "chevy", "ram", "tesla",
+  "rav4", "cr-v", "crv", "tucson", "sportage", "cx-50", "forester",
+  "escape", "highlander", "palisade", "telluride", "f-150", "f150",
+  "tacoma", "civic", "camry", "sonata", "model y", "ioniq", "equinox",
+  // Registration / Canadian-specific
   "rto", "registration", "road tax", "fastag",
 ];
 
@@ -55,6 +72,11 @@ export function checkTopicRelevance(message: string): TopicRelevanceResult {
     if (lower.includes(keyword)) {
       return { relevant: true };
     }
+  }
+
+  // Check for price patterns like "$40,000", "$45K", "under 50k"
+  if (/\$[\d,]+|\d+k\b|\d{2,3},?\d{3}/i.test(message)) {
+    return { relevant: true };
   }
 
   return { relevant: false, suggestion: OFF_TOPIC_REDIRECT };

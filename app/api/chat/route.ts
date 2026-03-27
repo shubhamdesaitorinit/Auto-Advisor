@@ -1,4 +1,4 @@
-import { type UIMessage } from "ai";
+import { type UIMessage, createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { createRequestLogger } from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { runInputGuardrails } from "@/guardrails/input-sanitizer";
@@ -11,6 +11,23 @@ function getTextFromParts(parts: UIMessage["parts"]): string {
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
     .map((p) => p.text)
     .join("");
+}
+
+/**
+ * Return a message as a proper UI message stream so useChat renders it
+ * as an assistant message instead of silently swallowing it.
+ */
+function streamTextMessage(text: string): Response {
+  const id = crypto.randomUUID();
+  return createUIMessageStreamResponse({
+    stream: createUIMessageStream({
+      execute: ({ writer }) => {
+        writer.write({ type: "text-start", id });
+        writer.write({ type: "text-delta", delta: text, id });
+        writer.write({ type: "text-end", id });
+      },
+    }),
+  });
 }
 
 export async function POST(request: Request) {
@@ -27,12 +44,8 @@ export async function POST(request: Request) {
     const rateLimit = await checkRateLimit(sessionId);
     if (!rateLimit.allowed) {
       log.warn("Rate limit exceeded");
-      return new Response(
-        JSON.stringify({
-          error: "Too many requests. Please wait before sending another message.",
-          resetIn: rateLimit.resetIn,
-        }),
-        { status: 429, headers: { "Content-Type": "application/json" } },
+      return streamTextMessage(
+        `You're sending messages too quickly. Please wait ${rateLimit.resetIn} seconds before trying again.`
       );
     }
 
@@ -41,10 +54,7 @@ export async function POST(request: Request) {
     const lastUserMessage = messages.filter((m) => m.role === "user").at(-1);
 
     if (!lastUserMessage) {
-      return new Response(
-        JSON.stringify({ error: "No user message found." }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
+      return streamTextMessage("I didn't receive a message. Could you try again?");
     }
 
     const lastUserText = getTextFromParts(lastUserMessage.parts);
@@ -53,10 +63,7 @@ export async function POST(request: Request) {
     const guardrail = runInputGuardrails(lastUserText, log);
     if (guardrail.blocked) {
       log.info({ reason: guardrail.reason }, "Message blocked by guardrails");
-      return new Response(
-        JSON.stringify({ error: guardrail.reason }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
+      return streamTextMessage(guardrail.reason ?? "I can't process that message. Please try rephrasing.");
     }
 
     // 4. Session
@@ -64,31 +71,30 @@ export async function POST(request: Request) {
     void trackSession(userId, sessionId);
     log.info({ leadScore: session.leadScore }, "Session loaded");
 
-    // 5. Orchestrate — detects intent and delegates to the right agent
-    const result = await orchestrate(messages);
-
-    // 6. Fire-and-forget session update
-    void (async () => {
-      try {
-        const text = await result.text;
-        await updateSession(sessionId, {
-          messages: [
-            ...session.messages,
-            { role: "user", content: guardrail.cleanMessage, timestamp: Date.now() },
-            { role: "assistant", content: text, timestamp: Date.now() },
-          ],
-        });
-      } catch (err) {
-        log.error({ err }, "Failed to update session after response");
-      }
-    })();
+    // 5. Orchestrate — detects intent and delegates to the right agent.
+    //    Pass an onFinish callback so session is updated AFTER the stream
+    //    completes, without racing with toUIMessageStreamResponse().
+    const result = await orchestrate(messages, {
+      onFinish: async (text: string) => {
+        try {
+          await updateSession(sessionId, {
+            messages: [
+              ...session.messages,
+              { role: "user", content: guardrail.cleanMessage, timestamp: Date.now() },
+              { role: "assistant", content: text, timestamp: Date.now() },
+            ],
+          });
+        } catch (err) {
+          log.error({ err }, "Failed to update session after response");
+        }
+      },
+    });
 
     return result.toUIMessageStreamResponse();
   } catch (err) {
     log.error({ err }, "Chat API error");
-    return new Response(
-      JSON.stringify({ error: "Something went wrong. Please try again." }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
+    return streamTextMessage(
+      "Sorry, something went wrong on my end. Please try again in a moment."
     );
   }
 }

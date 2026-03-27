@@ -42,17 +42,25 @@ function getLatestUserText(messages: UIMessage[]): string {
     .join("");
 }
 
+export interface OrchestrateOptions {
+  onFinish?: (text: string) => Promise<void>;
+}
+
 /**
  * Orchestrate the response: detect intent and delegate to the right agent.
  * Returns a streaming result.
  */
-export async function orchestrate(messages: UIMessage[]) {
+export async function orchestrate(messages: UIMessage[], options?: OrchestrateOptions) {
   const latestText = getLatestUserText(messages);
   const modelMessages = await convertToModelMessages(messages);
 
+  const onFinishCallback = options?.onFinish
+    ? ({ text }: { text: string }) => { void options.onFinish!(text); }
+    : undefined;
+
   // Delegate to vehicle search agent for vehicle-related queries
   if (isVehicleIntent(latestText)) {
-    return runVehicleSearchAgent(modelMessages);
+    return runVehicleSearchAgent(modelMessages, onFinishCallback);
   }
 
   // General assistant response
@@ -60,5 +68,6 @@ export async function orchestrate(messages: UIMessage[]) {
     model: getLLM(),
     system: ORCHESTRATOR_SYSTEM_PROMPT,
     messages: modelMessages,
+    onFinish: onFinishCallback,
   });
 }
