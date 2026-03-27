@@ -60,6 +60,8 @@ const CONVERSATIONAL_PATTERNS = [
   /^(hi|hello|hey|good\s*(morning|afternoon|evening)|namaste|thanks?|thank\s*you|ok|okay|yes|no|yep|nope|sure|great|cool|got\s*it|alright|bye|goodbye)\b/i,
   /^.{0,20}$/, // Short messages (follow-ups like "yes", "which one?", "the 28th")
   /\b(let'?s\s*(do|go|try|book)|actually|how about|instead|change)\b/i, // Conversational pivots
+  /\b(think about|consider|decide|get back|come back|sleep on)\b/i, // Deliberation responses
+  /\b(sounds good|works for me|that works|perfect|go ahead|proceed)\b/i, // Affirmations
   /^\d{1,2}(st|nd|rd|th)?\b/i, // Date references like "28th", "5th"
 ];
 
