@@ -1,5 +1,6 @@
 import * as kv from "./redis";
 import type { Session } from "@/types";
+import { DEFAULT_BUYER_PROFILE } from "@/types";
 
 const SESSION_TTL = 60 * 60 * 24; // 24 hours
 const prefix = "session:";
@@ -18,7 +19,7 @@ export async function createSession(sessionId: string): Promise<Session> {
     createdAt: Date.now(),
     lastActiveAt: Date.now(),
     messages: [],
-    buyerProfile: {},
+    buyerProfile: { ...DEFAULT_BUYER_PROFILE },
     vehiclesViewed: [],
     leadScore: "cold",
   };
