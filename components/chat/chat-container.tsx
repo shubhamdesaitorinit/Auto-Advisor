@@ -207,13 +207,22 @@ export function ChatContainer({
 
       {/* Error banner */}
       {error && (
-        <div className="mx-4 mb-2 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs px-3 py-2 flex items-center gap-2 animate-fade-in-up">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="mx-4 mb-2 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm px-4 py-3 flex items-start gap-2.5 animate-fade-in-up">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
-          Something went wrong. Please try again.
+          <div>
+            <p className="font-medium">
+              {error.message?.includes("Overloaded")
+                ? "The AI service is temporarily busy."
+                : "Something went wrong."}
+            </p>
+            <p className="text-xs mt-0.5 opacity-70">
+              Please wait a moment and try again.
+            </p>
+          </div>
         </div>
       )}
 

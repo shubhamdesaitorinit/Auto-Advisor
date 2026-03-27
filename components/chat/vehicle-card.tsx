@@ -159,9 +159,9 @@ function Tag({
   variant?: "blue" | "green" | "purple";
 }) {
   const colors = {
-    blue: "bg-blue-500/10 text-blue-400",
-    green: "bg-green-500/10 text-green-400",
-    purple: "bg-purple-500/10 text-purple-400",
+    blue: "bg-sky-500/10 text-sky-400",
+    green: "bg-emerald-500/10 text-emerald-400",
+    purple: "bg-violet-500/10 text-violet-400",
   };
   return (
     <span
@@ -244,7 +244,7 @@ export function ComparisonTable({ vehicles, differences }: ComparisonTableProps)
       </div>
 
       {/* Comparison rows */}
-      {rows.map((row, ri) => (
+      {rows.map((row) => (
         <div
           key={row.label}
           className="grid border-b border-border/20 last:border-0"

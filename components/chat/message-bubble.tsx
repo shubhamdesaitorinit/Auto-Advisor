@@ -44,7 +44,7 @@ function renderMarkdown(text: string) {
       // Regular line
       return <span key={`${pi}-${li}`} dangerouslySetInnerHTML={{ __html: formatInline(line) + (li < lines.length - 1 ? "<br/>" : "") }} />;
     });
-    return <p key={pi} className="mb-2 last:mb-0">{rendered}</p>;
+    return <div key={pi} className="mb-2 last:mb-0">{rendered}</div>;
   });
 }
 
