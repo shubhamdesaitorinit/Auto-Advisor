@@ -31,6 +31,11 @@ export function generateOffer(
   const wantsDeal = buyerProfile.dealSeeking || buyerProfile.negotiationIntent || buyerProfile.priceResistance;
   const isCounterOffer = !!previousOffer;
 
+  // If generate_offer is called at all, the buyer is in a negotiation context.
+  // Always include extras unless it's a pure informational query.
+  // The agent only calls this tool when the user wants a deal.
+  const inNegotiationContext = true;
+
   // Counter-offer escalation: if buyer rejected the previous offer,
   // increase the cut by 40-60% of the gap between previous offer and their budget
   const counterOfferBoost = isCounterOffer && buyerProfile.budgetMax
@@ -60,11 +65,10 @@ export function generateOffer(
       const priceCut = Math.min(targetCut, maxCut);
       priceReduction += priceCut;
     }
-  } else if (wantsDeal || isCounterOffer) {
-    // No specific budget gap, but buyer wants a deal or is countering
+  } else if (wantsDeal || isCounterOffer || inNegotiationContext) {
+    // No specific budget gap, but buyer wants a deal or is in negotiation
     const basePct = constraints.inventoryPressure === "high" ? 0.03
-      : constraints.inventoryPressure === "medium" ? 0.02 : 0.01;
-    // Counter-offers get 50% more aggressive
+      : constraints.inventoryPressure === "medium" ? 0.02 : 0.015;
     const cutPct = isCounterOffer ? basePct * 1.5 : basePct;
     const modestCut = Math.min(
       Math.round(pricing.msrp * cutPct),
@@ -83,7 +87,7 @@ export function generateOffer(
   // ── Step 3: Sweeten with high-efficiency extras ────────────────
   // These add perceived value on top of the price cut.
 
-  if (hasGap || wantsDeal) {
+  if (hasGap || wantsDeal || inNegotiationContext) {
     // Extended warranty — 3.1x efficiency
     extras.push({
       type: "extended_warranty",
@@ -106,7 +110,7 @@ export function generateOffer(
   }
 
   // Winter tires — always valuable for Canadian buyers when negotiating
-  if (hasGap || wantsDeal) {
+  if (hasGap || wantsDeal || inNegotiationContext) {
     const winterTireCost = 600;
     const winterTireValue = 1500;
     extras.push({
