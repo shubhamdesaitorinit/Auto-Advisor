@@ -44,6 +44,13 @@ const VEHICLE_KEYWORDS = [
   "rav4", "cr-v", "crv", "tucson", "sportage", "cx-50", "forester",
   "escape", "highlander", "palisade", "telluride", "f-150", "f150",
   "tacoma", "civic", "camry", "sonata", "model y", "ioniq", "equinox",
+  // Booking & scheduling
+  "schedule", "appointment", "reschedule", "cancel", "saturday",
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday",
+  "morning", "afternoon", "evening", "slot", "time",
+  "march", "april", "may", "june", "january", "february",
+  // Lead capture / contact
+  "email", "send me", "follow up", "contact",
   // Registration / Canadian-specific
   "rto", "registration", "road tax", "fastag",
 ];
@@ -51,7 +58,9 @@ const VEHICLE_KEYWORDS = [
 // Short messages / conversational responses that should always be allowed
 const CONVERSATIONAL_PATTERNS = [
   /^(hi|hello|hey|good\s*(morning|afternoon|evening)|namaste|thanks?|thank\s*you|ok|okay|yes|no|yep|nope|sure|great|cool|got\s*it|alright|bye|goodbye)\b/i,
-  /^.{0,15}$/, // Very short messages (likely follow-ups like "yes", "which one?")
+  /^.{0,20}$/, // Short messages (follow-ups like "yes", "which one?", "the 28th")
+  /\b(let'?s\s*(do|go|try|book)|actually|how about|instead|change)\b/i, // Conversational pivots
+  /^\d{1,2}(st|nd|rd|th)?\b/i, // Date references like "28th", "5th"
 ];
 
 const OFF_TOPIC_REDIRECT =
