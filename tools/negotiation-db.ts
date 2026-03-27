@@ -84,37 +84,45 @@ export async function saveOffer(
   offer: Offer,
   sessionId: string,
 ): Promise<string> {
-  // Get or create a conversation record for this session
-  let [convo] = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(eq(conversations.sessionId, sessionId))
-    .limit(1);
+  try {
+    // Get or create a conversation record for this session
+    let [convo] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.sessionId, sessionId))
+      .limit(1);
 
-  if (!convo) {
-    [convo] = await db
-      .insert(conversations)
-      .values({ sessionId })
-      .returning({ id: conversations.id });
+    if (!convo) {
+      const result = await db
+        .insert(conversations)
+        .values({ sessionId })
+        .returning({ id: conversations.id });
+      convo = result[0];
+      if (!convo) throw new Error("Failed to create conversation record");
+    }
+
+    const [inserted] = await db
+      .insert(offers)
+      .values({
+        conversationId: convo.id,
+        vehicleId: offer.vehicleId,
+        offeredPrice: String(offer.offeredPrice),
+        discountAmount: String(offer.discountAmount),
+        discountPct: String(offer.discountPct),
+        marginRetainedPct: String(offer.marginRetainedPct),
+        extrasIncluded: offer.extras.map((e) => e.description ?? e.type),
+        approvalStatus: offer.approvalStatus,
+        justification: offer.justification,
+        expiresAt: new Date(Date.now() + offer.validForHours * 60 * 60 * 1000),
+      })
+      .returning({ id: offers.id });
+
+    return inserted.id;
+  } catch (err) {
+    // Log but don't crash — return a placeholder ID so the agent can still respond
+    console.error("Failed to save offer to DB:", err);
+    return `unsaved-${Date.now()}`;
   }
-
-  const [inserted] = await db
-    .insert(offers)
-    .values({
-      conversationId: convo.id,
-      vehicleId: offer.vehicleId,
-      offeredPrice: String(offer.offeredPrice),
-      discountAmount: String(offer.discountAmount),
-      discountPct: String(offer.discountPct),
-      marginRetainedPct: String(offer.marginRetainedPct),
-      extrasIncluded: offer.extras.map((e) => e.description ?? e.type),
-      approvalStatus: offer.approvalStatus,
-      justification: offer.justification,
-      expiresAt: new Date(Date.now() + offer.validForHours * 60 * 60 * 1000),
-    })
-    .returning({ id: offers.id });
-
-  return inserted.id;
 }
 
 /**

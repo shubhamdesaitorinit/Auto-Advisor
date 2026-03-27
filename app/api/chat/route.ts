@@ -1,7 +1,12 @@
-import { type UIMessage, createUIMessageStream, createUIMessageStreamResponse } from "ai";
+import {
+  type UIMessage,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+} from "ai";
 import { createRequestLogger } from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { runInputGuardrails } from "@/guardrails/input-sanitizer";
+import { runOutputValidation } from "@/guardrails/output-validator";
 import { getOrCreateSession, updateSession, trackSession } from "@/lib/session";
 import { orchestrate } from "@/agents/orchestrator";
 import type { BuyerProfile } from "@/types";
@@ -14,10 +19,7 @@ function getTextFromParts(parts: UIMessage["parts"]): string {
     .join("");
 }
 
-/**
- * Return a message as a proper UI message stream so useChat renders it
- * as an assistant message instead of silently swallowing it.
- */
+/** Return a text message as a proper UI message stream. */
 function streamTextMessage(text: string): Response {
   const id = crypto.randomUUID();
   return createUIMessageStreamResponse({
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
     if (!rateLimit.allowed) {
       log.warn("Rate limit exceeded");
       return streamTextMessage(
-        `You're sending messages too quickly. Please wait ${rateLimit.resetIn} seconds before trying again.`
+        `You're sending messages too quickly. Please wait ${rateLimit.resetIn} seconds before trying again.`,
       );
     }
 
@@ -64,7 +66,9 @@ export async function POST(request: Request) {
     const guardrail = runInputGuardrails(lastUserText, log);
     if (guardrail.blocked) {
       log.info({ reason: guardrail.reason }, "Message blocked by guardrails");
-      return streamTextMessage(guardrail.reason ?? "I can't process that message. Please try rephrasing.");
+      return streamTextMessage(
+        guardrail.reason ?? "I can't process that message. Please try rephrasing.",
+      );
     }
 
     // 4. Session
@@ -72,10 +76,12 @@ export async function POST(request: Request) {
     void trackSession(userId, sessionId);
     log.info({ leadScore: session.leadScore }, "Session loaded");
 
-    // Track profile updates from negotiation agent
+    // Track state updates from agents
     let updatedProfile: BuyerProfile | undefined;
+    let newVehicleIds: string[] = [];
+    let newOffers = new Map<string, import("@/types").Offer>();
 
-    // 5. Orchestrate — detects intent and delegates to the right agent.
+    // 5. Orchestrate
     const result = await orchestrate(messages, {
       sessionId,
       buyerProfile: session.buyerProfile,
@@ -83,40 +89,81 @@ export async function POST(request: Request) {
       onProfileUpdate: (profile) => {
         updatedProfile = profile;
       },
-      onFinish: async (text: string) => {
-        try {
-          const sessionUpdate: Record<string, unknown> = {
-            messages: [
-              ...session.messages,
-              { role: "user", content: guardrail.cleanMessage, timestamp: Date.now() },
-              { role: "assistant", content: text, timestamp: Date.now() },
-            ],
-          };
-
-          // Persist updated buyer profile if negotiation occurred
-          if (updatedProfile) {
-            sessionUpdate.buyerProfile = updatedProfile;
-            // Upgrade lead score when negotiation happens
-            if (session.leadScore === "cold") {
-              sessionUpdate.leadScore = "warm";
-            }
-            if (updatedProfile.negotiationIntent || updatedProfile.budgetMax) {
-              sessionUpdate.leadScore = "hot";
-            }
-          }
-
-          await updateSession(sessionId, sessionUpdate);
-        } catch (err) {
-          log.error({ err }, "Failed to update session after response");
-        }
+      onVehiclesViewed: (ids) => {
+        newVehicleIds = ids;
+      },
+      onOffersGenerated: (offers) => {
+        newOffers = offers;
       },
     });
 
-    return result.toUIMessageStreamResponse();
+    // 6. Collect full response text, validate, then stream the validated version.
+    //    This ensures the user NEVER sees an invalid response.
+    const fullText = await result.text;
+
+    // 7. Output validation (runs BEFORE user sees the response)
+    const allOffers = { ...session.activeOffers };
+    for (const [vid, offer] of newOffers) {
+      allOffers[vid] = offer;
+    }
+
+    const validation = await runOutputValidation(fullText, {
+      activeOffers: allOffers,
+      log,
+    });
+
+    const finalText = validation.correctedResponse;
+
+    if (validation.blocked) {
+      log.warn(
+        { blockReason: validation.blockReason, processingTimeMs: validation.processingTimeMs },
+        "Output BLOCKED by validation",
+      );
+    }
+
+    // 8. Session update (fire-and-forget — don't block the response)
+    void (async () => {
+      try {
+        const sessionUpdate: Record<string, unknown> = {
+          messages: [
+            ...session.messages,
+            { role: "user", content: guardrail.cleanMessage, timestamp: Date.now() },
+            { role: "assistant", content: finalText, timestamp: Date.now() },
+          ],
+        };
+
+        if (newVehicleIds.length > 0) {
+          sessionUpdate.vehiclesViewed = [
+            ...new Set([...session.vehiclesViewed, ...newVehicleIds]),
+          ];
+        }
+
+        if (newOffers.size > 0) {
+          sessionUpdate.activeOffers = allOffers;
+        }
+
+        if (updatedProfile) {
+          sessionUpdate.buyerProfile = updatedProfile;
+          if (session.leadScore === "cold") {
+            sessionUpdate.leadScore = "warm";
+          }
+          if (updatedProfile.negotiationIntent || updatedProfile.budgetMax) {
+            sessionUpdate.leadScore = "hot";
+          }
+        }
+
+        await updateSession(sessionId, sessionUpdate);
+      } catch (err) {
+        log.error({ err }, "Failed to update session");
+      }
+    })();
+
+    // 9. Stream the validated text to the user
+    return streamTextMessage(finalText);
   } catch (err) {
     log.error({ err }, "Chat API error");
     return streamTextMessage(
-      "Sorry, something went wrong on my end. Please try again in a moment."
+      "Sorry, something went wrong on my end. Please try again in a moment.",
     );
   }
 }
