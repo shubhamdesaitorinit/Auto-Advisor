@@ -8,6 +8,17 @@ export function runInputGuardrails(
   message: string,
   log?: Logger,
 ): GuardrailResult {
+  // 0. Message length limit — prevent token abuse
+  const MAX_MESSAGE_LENGTH = 2000;
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    log?.warn({ check: "length", length: message.length }, "Message too long");
+    return {
+      blocked: true,
+      reason: "Your message is too long. Please keep it under 2,000 characters.",
+      cleanMessage: message.slice(0, MAX_MESSAGE_LENGTH),
+    };
+  }
+
   // 1. Prompt injection check
   const injection = detectPromptInjection(message);
   log?.info({ check: "prompt_injection", result: injection.detected ? "blocked" : "pass" });
@@ -19,10 +30,11 @@ export function runInputGuardrails(
     };
   }
 
-  // 2. PII detection — mask and continue
+  // 2. PII detection — mask sensitive IDs but preserve contact info
   const pii = detectPII(message);
   log?.info({ check: "pii_detection", found: pii.found, types: pii.types });
-  const cleanMessage = pii.found ? pii.masked : message;
+  // Use `clean` (keeps email/phone) not `masked` (redacts everything)
+  const cleanMessage = pii.found ? pii.clean : message;
 
   // 3. Topic relevance check
   const topic = checkTopicRelevance(cleanMessage);

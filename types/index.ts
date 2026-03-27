@@ -166,7 +166,8 @@ export interface RateLimitResult {
 export interface PIIDetectionResult {
   found: boolean;
   types: string[];
-  masked: string;
+  masked: string;  // All PII masked (for logging)
+  clean: string;   // Only sensitive IDs masked, contact info preserved (for conversation)
 }
 
 export interface PromptInjectionResult {
