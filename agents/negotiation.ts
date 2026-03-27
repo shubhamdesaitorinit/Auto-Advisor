@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getLLM } from "@/lib/llm";
 import { NEGOTIATION_SYSTEM_PROMPT } from "@/prompts/negotiation";
 import { getFullPricing, saveOffer, updateOfferStatus } from "@/tools/negotiation-db";
+import { searchVehicles } from "@/tools/vehicle-db";
 import { updateBuyerProfile } from "@/engine/budget-tracker";
 import { solveConstraints } from "@/engine/constraint-solver";
 import { generateOffer } from "@/engine/offer-generator";
@@ -70,6 +71,29 @@ function createNegotiationTools(sessionId: string, buyerProfile: BuyerProfile, l
             competitorAnchor: currentProfile.competitorAnchor,
             signalCount: currentProfile.signals.length,
           };
+        },
+      }),
+
+      find_vehicle: tool({
+        description:
+          "Search for a vehicle by name, model, or type. Use this when you need to find a vehicle ID before getting pricing or generating an offer. Returns matching vehicles with their IDs.",
+        inputSchema: z.object({
+          query: z.string().describe("Vehicle name or search term (e.g., 'RAV4', 'Tucson Ultimate', 'SUV')"),
+        }),
+        execute: async (params) => {
+          log.info({ tool: "find_vehicle", query: params.query }, "Searching for vehicle");
+          const results = await searchVehicles({ query: params.query });
+          const matches = results.slice(0, 3).map((r) => ({
+            id: r.id,
+            name: `${r.make} ${r.model}`,
+            variant: r.variant,
+            msrp: r.msrp,
+            fuelType: r.fuelType,
+          }));
+          for (const m of matches) {
+            if (m.id) viewedVehicleIds.add(m.id);
+          }
+          return { matches, count: matches.length };
         },
       }),
 
@@ -243,6 +267,7 @@ export function runNegotiationAgent(
   buyerProfile: BuyerProfile,
   log: Logger,
   onFinish?: (event: { text: string }) => void,
+  sessionContext?: { vehiclesViewed?: string[]; activeOffers?: Record<string, Offer> },
 ) {
   const { tools, currentProfile, viewedVehicleIds, generatedOffers } = createNegotiationTools(
     sessionId,
@@ -250,16 +275,32 @@ export function runNegotiationAgent(
     log,
   );
 
+  // Build session context for the system prompt
+  let systemPrompt = NEGOTIATION_SYSTEM_PROMPT;
+  if (sessionContext) {
+    const contextParts: string[] = [];
+    if (sessionContext.activeOffers && Object.keys(sessionContext.activeOffers).length > 0) {
+      const offerSummary = Object.values(sessionContext.activeOffers)
+        .map((o) => `- Vehicle ${o.vehicleId}: offered $${o.offeredPrice.toLocaleString("en-CA")} (MSRP $${o.msrp.toLocaleString("en-CA")})`)
+        .join("\n");
+      contextParts.push(`## Active offers\n${offerSummary}`);
+    }
+    if (buyerProfile.budgetMax) {
+      contextParts.push(`## Buyer budget\nMax: $${buyerProfile.budgetMax.toLocaleString("en-CA")}`);
+    }
+    if (contextParts.length > 0) {
+      systemPrompt += `\n\n${contextParts.join("\n\n")}`;
+    }
+  }
+
   return {
     stream: streamText({
       model: getLLM(),
-      system: NEGOTIATION_SYSTEM_PROMPT,
+      system: systemPrompt,
       messages,
       tools,
       stopWhen: stepCountIs(5),
       onFinish: (event) => {
-        (event as unknown as Record<string, unknown>).__updatedProfile =
-          currentProfile();
         onFinish?.(event);
       },
     }),
