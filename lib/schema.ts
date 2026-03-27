@@ -102,3 +102,49 @@ export const offers = pgTable("offers", {
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ── Test Drive Bookings ─────────────────────────────────────────────
+export const testDriveBookings = pgTable("test_drive_bookings", {
+  id: uuid().defaultRandom().primaryKey(),
+  conversationId: uuid("conversation_id").references(() => conversations.id),
+  sessionId: varchar("session_id", { length: 100 }).notNull(),
+  vehicleId: uuid("vehicle_id").references(() => vehicles.id).notNull(),
+  customerName: varchar("customer_name", { length: 200 }).notNull(),
+  customerEmail: varchar("customer_email", { length: 200 }).notNull(),
+  customerPhone: varchar("customer_phone", { length: 50 }),
+  preferredDate: varchar("preferred_date", { length: 20 }).notNull(),
+  preferredTime: varchar("preferred_time", { length: 20 }).notNull(),
+  durationMinutes: integer("duration_minutes").notNull().default(30),
+  status: varchar({ length: 30 }).notNull().default("confirmed"),
+  calendarEventId: varchar("calendar_event_id", { length: 300 }),
+  location: varchar({ length: 300 }).notNull().default("123 Auto Drive, Toronto, ON M5V 1A1"),
+  vehicleInfo: jsonb("vehicle_info").$type<Record<string, string>>().notNull().default({}),
+  notes: text(),
+  confirmationSent: boolean("confirmation_sent").notNull().default(false),
+  reminderSent: boolean("reminder_sent").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ── Leads ───────────────────────────────────────────────────────────
+export const leads = pgTable("leads", {
+  id: uuid().defaultRandom().primaryKey(),
+  conversationId: uuid("conversation_id").references(() => conversations.id),
+  sessionId: varchar("session_id", { length: 100 }).notNull(),
+  customerName: varchar("customer_name", { length: 200 }),
+  customerEmail: varchar("customer_email", { length: 200 }),
+  customerPhone: varchar("customer_phone", { length: 50 }),
+  score: varchar({ length: 20 }).notNull().default("cold"),
+  scoreDetails: jsonb("score_details").$type<Record<string, unknown>>().notNull().default({}),
+  vehiclesInterested: jsonb("vehicles_interested").$type<Array<{ id: string; name: string }>>().notNull().default([]),
+  budgetRange: jsonb("budget_range").$type<{ min?: number; max?: number } | null>(),
+  buyerProfile: jsonb("buyer_profile").$type<Record<string, unknown>>().notNull().default({}),
+  conversationSummary: text("conversation_summary"),
+  status: varchar({ length: 30 }).notNull().default("new"),
+  assignedTo: varchar("assigned_to", { length: 200 }),
+  emailSent: boolean("email_sent").notNull().default(false),
+  emailSentAt: timestamp("email_sent_at"),
+  source: varchar({ length: 50 }).notNull().default("chat_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
