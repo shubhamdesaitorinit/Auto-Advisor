@@ -7,11 +7,9 @@ const INJECTION_PATTERNS: Array<{ regex: RegExp; label: string }> = [
   { regex: /pretend\s+(you\s+are|to\s+be)/i, label: "role_override" },
   { regex: /act\s+as\s+(a|an|if)/i, label: "role_override" },
   { regex: /roleplay\s+as/i, label: "role_override" },
-  { regex: /reveal\s+(cost|margin|price|markup)/i, label: "cost_probe" },
-  { regex: /show\s+(me\s+)?(dealer\s+)?cost/i, label: "cost_probe" },
-  { regex: /dealer\s+cost/i, label: "cost_probe" },
-  { regex: /internal\s+pricing/i, label: "cost_probe" },
-  { regex: /\bmarkup\b/i, label: "cost_probe" },
+  // Note: "dealer cost" / "margin" questions are NOT injection attempts.
+  // They're legitimate user questions handled by the negotiation agent's prompt
+  // which refuses politely. Only block actual system manipulation attempts.
   { regex: /\bjailbreak\b/i, label: "jailbreak" },
   { regex: /\bDAN\b/, label: "jailbreak" },
   { regex: /bypass\s+(filter|restriction|safety|guardrail)/i, label: "bypass" },
