@@ -4,6 +4,7 @@ import { checkRateLimit } from "@/lib/rate-limiter";
 import { runInputGuardrails } from "@/guardrails/input-sanitizer";
 import { getOrCreateSession, updateSession, trackSession } from "@/lib/session";
 import { orchestrate } from "@/agents/orchestrator";
+import type { BuyerProfile } from "@/types";
 
 /** Extract plain text from a UIMessage's parts array. */
 function getTextFromParts(parts: UIMessage["parts"]): string {
@@ -71,19 +72,40 @@ export async function POST(request: Request) {
     void trackSession(userId, sessionId);
     log.info({ leadScore: session.leadScore }, "Session loaded");
 
+    // Track profile updates from negotiation agent
+    let updatedProfile: BuyerProfile | undefined;
+
     // 5. Orchestrate — detects intent and delegates to the right agent.
-    //    Pass an onFinish callback so session is updated AFTER the stream
-    //    completes, without racing with toUIMessageStreamResponse().
     const result = await orchestrate(messages, {
+      sessionId,
+      buyerProfile: session.buyerProfile,
+      log,
+      onProfileUpdate: (profile) => {
+        updatedProfile = profile;
+      },
       onFinish: async (text: string) => {
         try {
-          await updateSession(sessionId, {
+          const sessionUpdate: Record<string, unknown> = {
             messages: [
               ...session.messages,
               { role: "user", content: guardrail.cleanMessage, timestamp: Date.now() },
               { role: "assistant", content: text, timestamp: Date.now() },
             ],
-          });
+          };
+
+          // Persist updated buyer profile if negotiation occurred
+          if (updatedProfile) {
+            sessionUpdate.buyerProfile = updatedProfile;
+            // Upgrade lead score when negotiation happens
+            if (session.leadScore === "cold") {
+              sessionUpdate.leadScore = "warm";
+            }
+            if (updatedProfile.negotiationIntent || updatedProfile.budgetMax) {
+              sessionUpdate.leadScore = "hot";
+            }
+          }
+
+          await updateSession(sessionId, sessionUpdate);
         } catch (err) {
           log.error({ err }, "Failed to update session after response");
         }
