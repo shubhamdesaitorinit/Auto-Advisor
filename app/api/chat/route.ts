@@ -110,16 +110,16 @@ export async function POST(request: Request) {
             log,
           });
 
-          const finalText = validation.blocked
-            ? validation.correctedResponse
-            : validation.correctedResponse;
-
           if (validation.blocked) {
             log.warn(
               { blockReason: validation.blockReason, processingTimeMs: validation.processingTimeMs },
-              "Output BLOCKED by validation — fallback stored",
+              "Output BLOCKED by validation — not saving to session",
             );
+            // Don't save blocked responses to session messages
+            return;
           }
+
+          const finalText = validation.correctedResponse;
 
           // ── 7. Session update ───────────────────────────────
           const sessionUpdate: Record<string, unknown> = {
