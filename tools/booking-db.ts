@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { testDriveBookings, conversations, vehicles } from "@/lib/schema";
 import { eq, ilike, or } from "drizzle-orm";
+import { logger } from "@/lib/logger";
 
 /**
  * Resolve a vehicle ID from either a UUID or a name/model string.
@@ -30,16 +31,23 @@ export async function resolveVehicle(
 
     if (searchTerms.length === 0) return null;
 
-    const conditions = searchTerms.map((t) =>
-      or(ilike(vehicles.make, `%${t}%`), ilike(vehicles.model, `%${t}%`), ilike(vehicles.variant, `%${t}%`)),
-    );
+    // Query DB with WHERE conditions instead of fetching all vehicles
+    const conditions = searchTerms.flatMap((t) => [
+      ilike(vehicles.make, `%${t}%`),
+      ilike(vehicles.model, `%${t}%`),
+      ilike(vehicles.variant, `%${t}%`),
+    ]);
 
     const rows = await db
       .select({ id: vehicles.id, make: vehicles.make, model: vehicles.model, variant: vehicles.variant, year: vehicles.year })
-      .from(vehicles);
+      .from(vehicles)
+      .where(or(...conditions))
+      .limit(10);
 
-    // Score each vehicle by how many search terms match
-    let bestMatch: (typeof rows)[0] | null = null;
+    if (rows.length === 0) return null;
+
+    // Score matched vehicles by how many search terms hit
+    let bestMatch = rows[0];
     let bestScore = 0;
 
     for (const v of rows) {
@@ -51,7 +59,7 @@ export async function resolveVehicle(
       }
     }
 
-    return bestMatch ? { id: bestMatch.id, name: `${bestMatch.year} ${bestMatch.make} ${bestMatch.model} ${bestMatch.variant}` } : null;
+    return { id: bestMatch.id, name: `${bestMatch.year} ${bestMatch.make} ${bestMatch.model} ${bestMatch.variant}` };
   } catch {
     return null;
   }
@@ -106,7 +114,7 @@ export async function saveBooking(params: {
 
     return booking.id;
   } catch (err) {
-    console.error("Failed to save booking:", err);
+    logger.error({ err }, "Failed to save booking");
     return `unsaved-${Date.now()}`;
   }
 }
@@ -125,7 +133,7 @@ export async function updateBookingStatus(
       .set(updates)
       .where(eq(testDriveBookings.id, bookingId));
   } catch (err) {
-    console.error("Failed to update booking:", err);
+    logger.error({ err }, "Failed to update booking");
   }
 }
 

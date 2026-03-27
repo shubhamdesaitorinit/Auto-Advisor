@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { vehicles, pricing, offers, conversations } from "@/lib/schema";
 import { eq } from "drizzle-orm";
+import { logger } from "@/lib/logger";
 import type { VehiclePricing, Offer } from "@/types";
 
 /**
@@ -120,7 +121,7 @@ export async function saveOffer(
     return inserted.id;
   } catch (err) {
     // Log but don't crash — return a placeholder ID so the agent can still respond
-    console.error("Failed to save offer to DB:", err);
+    logger.error({ err }, "Failed to save offer to DB");
     return `unsaved-${Date.now()}`;
   }
 }

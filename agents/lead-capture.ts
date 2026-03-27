@@ -69,14 +69,17 @@ function createLeadCaptureTools(session: Session, log: Logger) {
         // Score the lead deterministically
         const scoreResult = scoreLead(session);
 
-        // Get vehicle details for interested vehicles
-        const vehiclesInterested: Array<{ id: string; name: string }> = [];
-        for (const vid of session.vehiclesViewed.slice(0, 5)) {
-          const v = await getVehicleDetails(vid);
-          if (v) {
-            vehiclesInterested.push({ id: vid, name: `${v.make} ${v.model} ${v.variant}` });
-          }
-        }
+        // Get vehicle details for interested vehicles (parallel, not sequential)
+        const viewedIds = session.vehiclesViewed.slice(0, 5);
+        const vehicleResults = await Promise.all(
+          viewedIds.map(async (vid) => {
+            const v = await getVehicleDetails(vid);
+            return v ? { id: vid, name: `${v.make} ${v.model} ${v.variant}` } : null;
+          }),
+        );
+        const vehiclesInterested = vehicleResults.filter(
+          (v): v is NonNullable<typeof v> => v !== null,
+        );
 
         // Save lead to DB
         const leadId = await saveLead({
@@ -94,7 +97,7 @@ function createLeadCaptureTools(session: Session, log: Logger) {
           budgetRange: session.buyerProfile.budgetMax
             ? { min: session.buyerProfile.budgetMin, max: session.buyerProfile.budgetMax }
             : undefined,
-          buyerProfile: session.buyerProfile as unknown as Record<string, unknown>,
+          buyerProfile: { ...session.buyerProfile },
           conversationSummary: params.conversation_summary,
         });
 

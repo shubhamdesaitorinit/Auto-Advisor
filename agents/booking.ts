@@ -113,8 +113,8 @@ const bookingTools = (sessionId: string, log: Logger) => ({
       await sendBookingConfirmation({
         to: params.customer_email,
         customerName: params.customer_name,
-        vehicleName: vehicleName.split(" ").slice(1).join(" "),
-        vehicleVariant: "",
+        vehicleName,
+        vehicleVariant: resolved.name !== vehicleName ? resolved.name : "",
         date: dateFormatted,
         time: `${startLabel} - ${endLabel}`,
         location: "123 Auto Drive, Toronto, ON M5V 1A1",

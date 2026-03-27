@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { leads, conversations } from "@/lib/schema";
 import { eq } from "drizzle-orm";
+import { logger } from "@/lib/logger";
 
 export async function saveLead(params: {
   sessionId: string;
@@ -50,7 +51,7 @@ export async function saveLead(params: {
 
     return lead.id;
   } catch (err) {
-    console.error("Failed to save lead:", err);
+    logger.error({ err }, "Failed to save lead");
     return `unsaved-${Date.now()}`;
   }
 }
