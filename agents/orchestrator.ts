@@ -38,7 +38,7 @@ const NEGOTIATION_INTENT_PATTERNS = [
   /\b(promotion|promo|sale|incentive|rebate|cashback|special.*offer)\b/i,
   /\b(friend.*(got|bought|paid)|saw.*(for|at)|competitor|other dealer|match.*price)\b/i,
   /\b(trade.in|trade my|current car|sell my)\b/i,
-  /\b(ready to buy|want to buy|let.s do it|i.ll take|sign|close|wrap up)\b/i,
+  /\b(ready to buy|want to buy|let.s do it|i.ll take|i will take|i.?ll take|go ahead|go with|wrap up)\b/i,
 ];
 
 // ── Vehicle search intent patterns ──────────────────────────────
@@ -110,8 +110,11 @@ export async function orchestrate(
       }
     : undefined;
 
-  // 1. Booking intent — test drive scheduling
-  if (isBookingIntent(latestText)) {
+  // 1. Booking intent — unless user is also asking to SEARCH for vehicles
+  //    "Book a test drive for the Tucson" → booking (vehicle named, go book)
+  //    "Show me SUVs and book a test drive" → vehicle search first (need to pick first)
+  const hasSearchAction = /\b(show me|looking for|find|search|recommend|compare)\b/i.test(latestText);
+  if (isBookingIntent(latestText) && !hasSearchAction) {
     log.info({ agent: "booking", message: latestText.slice(0, 100) }, "Routing to booking agent");
     return runBookingAgent(modelMessages, sessionId, log, onFinishCallback);
   }
@@ -128,6 +131,10 @@ export async function orchestrate(
 
     const profile = options?.buyerProfile ?? DEFAULT_BUYER_PROFILE;
 
+    const sessionCtx = options?.session
+      ? { vehiclesViewed: options.session.vehiclesViewed, activeOffers: options.session.activeOffers }
+      : undefined;
+
     const { stream, getUpdatedProfile, getViewedVehicleIds, getGeneratedOffers } = runNegotiationAgent(
       modelMessages,
       sessionId,
@@ -141,6 +148,7 @@ export async function orchestrate(
         if (offers.size > 0) options?.onOffersGenerated?.(offers);
         onFinishCallback?.(event);
       },
+      sessionCtx,
     );
     return stream;
   }
@@ -162,7 +170,16 @@ export async function orchestrate(
       buyerContext = parts.join("\n");
     }
 
-    return runVehicleSearchAgent(modelMessages, onFinishCallback, buyerContext);
+    const { stream: searchStream, getViewedIds } = runVehicleSearchAgent(
+      modelMessages,
+      (event) => {
+        const viewed = getViewedIds();
+        if (viewed.length > 0) options?.onVehiclesViewed?.(viewed);
+        onFinishCallback?.(event);
+      },
+      buyerContext,
+    );
+    return searchStream;
   }
 
   // 5. General assistant
