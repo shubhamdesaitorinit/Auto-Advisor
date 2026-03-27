@@ -54,7 +54,8 @@ export interface Session {
   messages: SessionMessage[];
   buyerProfile: BuyerProfile;
   vehiclesViewed: string[];
-  currentOffer?: Offer;
+  /** Active offers keyed by vehicleId. Supports negotiating multiple vehicles. */
+  activeOffers: Record<string, Offer>;
   leadScore: "cold" | "warm" | "hot";
 }
 
@@ -89,6 +90,7 @@ export interface Offer {
   approvalStatus: "auto_approved" | "needs_manager" | "rejected";
   validForHours: number;
   justification: string;
+  createdAt?: number;
 }
 
 export interface EMIResult {
