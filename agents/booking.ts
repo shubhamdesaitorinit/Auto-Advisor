@@ -1,7 +1,7 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { stepCountIs, type ModelMessage } from "ai";
 import { tool } from "@ai-sdk/provider-utils";
 import { z } from "zod";
-import { getLLM } from "@/lib/llm";
+import { getLLM, streamTextWithRetry } from "@/lib/llm";
 import { BOOKING_SYSTEM_PROMPT } from "@/prompts/booking";
 import {
   getAvailableSlots,
@@ -188,7 +188,7 @@ export function runBookingAgent(
   log?: Logger,
   onFinish?: (event: { text: string }) => void,
 ) {
-  return streamText({
+  return streamTextWithRetry({
     model: getLLM(),
     system: BOOKING_SYSTEM_PROMPT,
     messages,

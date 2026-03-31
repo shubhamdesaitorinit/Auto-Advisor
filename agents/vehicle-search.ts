@@ -1,7 +1,7 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { stepCountIs, type ModelMessage } from "ai";
 import { tool } from "@ai-sdk/provider-utils";
 import { z } from "zod";
-import { getLLM } from "@/lib/llm";
+import { getLLM, streamTextWithRetry } from "@/lib/llm";
 import { VEHICLE_SEARCH_SYSTEM_PROMPT } from "@/prompts/vehicle-search";
 import {
   searchVehicles,
@@ -105,7 +105,7 @@ export function runVehicleSearchAgent(
     ? `${VEHICLE_SEARCH_SYSTEM_PROMPT}\n\n## Known buyer context\n${buyerContext}`
     : VEHICLE_SEARCH_SYSTEM_PROMPT;
 
-  const stream = streamText({
+  const stream = streamTextWithRetry({
     model: getLLM(),
     system,
     messages,

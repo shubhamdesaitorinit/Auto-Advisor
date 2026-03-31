@@ -1,7 +1,7 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { stepCountIs, type ModelMessage } from "ai";
 import { tool } from "@ai-sdk/provider-utils";
 import { z } from "zod";
-import { getLLM } from "@/lib/llm";
+import { getLLM, streamTextWithRetry } from "@/lib/llm";
 import { LEAD_CAPTURE_SYSTEM_PROMPT } from "@/prompts/lead-capture";
 import { scoreLead } from "@/engine/lead-scorer";
 import { saveLead, getLeadBySession } from "@/tools/lead-db";
@@ -178,7 +178,7 @@ export function runLeadCaptureAgent(
 ) {
   const tools = createLeadCaptureTools(session, log ?? rootLogger);
 
-  return streamText({
+  return streamTextWithRetry({
     model: getLLM(),
     system: LEAD_CAPTURE_SYSTEM_PROMPT,
     messages,

@@ -1,5 +1,5 @@
-import { streamText, convertToModelMessages, type UIMessage } from "ai";
-import { getLLM } from "@/lib/llm";
+import { convertToModelMessages, type UIMessage } from "ai";
+import { getLLM, streamTextWithRetry } from "@/lib/llm";
 import { logger } from "@/lib/logger";
 import { ORCHESTRATOR_SYSTEM_PROMPT } from "@/prompts/orchestrator";
 import { runVehicleSearchAgent } from "./vehicle-search";
@@ -184,7 +184,7 @@ export async function orchestrate(
 
   // 5. General assistant
   log.info({ agent: "general", message: latestText.slice(0, 100) }, "Routing to general assistant");
-  return streamText({
+  return streamTextWithRetry({
     model: getLLM(),
     system: ORCHESTRATOR_SYSTEM_PROMPT,
     messages: modelMessages,

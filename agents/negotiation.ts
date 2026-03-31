@@ -1,7 +1,7 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { stepCountIs, type ModelMessage } from "ai";
 import { tool } from "@ai-sdk/provider-utils";
 import { z } from "zod";
-import { getLLM } from "@/lib/llm";
+import { getLLM, streamTextWithRetry } from "@/lib/llm";
 import { NEGOTIATION_SYSTEM_PROMPT } from "@/prompts/negotiation";
 import { getFullPricing, saveOffer, updateOfferStatus } from "@/tools/negotiation-db";
 import { searchVehicles } from "@/tools/vehicle-db";
@@ -294,7 +294,7 @@ export function runNegotiationAgent(
   }
 
   return {
-    stream: streamText({
+    stream: streamTextWithRetry({
       model: getLLM(),
       system: systemPrompt,
       messages,

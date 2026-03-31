@@ -11,6 +11,9 @@ import { getOrCreateSession, updateSession, trackSession } from "@/lib/session";
 import { orchestrate } from "@/agents/orchestrator";
 import type { BuyerProfile } from "@/types";
 
+// Vercel serverless function timeout (seconds)
+export const maxDuration = 60;
+
 /** Extract plain text from a UIMessage's parts array. */
 function getTextFromParts(parts: UIMessage["parts"]): string {
   return parts
